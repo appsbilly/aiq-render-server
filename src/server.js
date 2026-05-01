@@ -1,28 +1,11 @@
-// render-server/src/server.js — Plan A
-//
-// Combines a silent DoP-animated avatar video with TTS audio + captions into the final post.
-// FFmpeg pipeline:
-//   1. Loop silent avatar video to match audio duration
-//   2. Add audio track
-//   3. Burn caption overlays from on_screen_text
-//   4. Output 1080x1920 vertical MP4
-//
-// POST /render
-// {
-//   "script_id": "...",
-//   "silent_video_url": "https://...",
-//   "audio_url": "https://...",
-//   "on_screen_text": [{ start_time_sec, text, emphasis }],
-//   "screens": [...],
-//   "cta": "..."
-// }
-// Returns: { video_url, storage_path, duration_seconds }
+// render-server/src/server.js — Plan A v2
+// Combines silent DoP video + MP3 audio + caption overlays
+// FFmpeg handles MP3/WAV/etc natively, no pre-conversion needed
 
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import ffmpeg from 'fluent-ffmpeg';
 import fs from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -52,7 +35,7 @@ function authenticate(req, res, next) {
 }
 
 app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'aiq-render-server', mode: 'plan-a' });
+  res.json({ status: 'ok', service: 'aiq-render-server', mode: 'plan-a-v2' });
 });
 
 async function downloadToFile(url, destPath) {
@@ -116,7 +99,7 @@ async function uploadFinalVideo(scriptId, localPath) {
 
   const { data } = await supabase.storage
     .from('content-assets')
-    .createSignedUrl(storagePath, 60 * 60 * 24 * 30); // 30 days
+    .createSignedUrl(storagePath, 60 * 60 * 24 * 30);
 
   if (!data?.signedUrl) throw new Error('Failed to sign final video URL');
 
@@ -139,7 +122,7 @@ app.post('/render', authenticate, async (req, res) => {
     }
 
     const silentVideoPath = join(workDir, 'silent.mp4');
-    const audioPath = join(workDir, 'audio.wav');
+    const audioPath = join(workDir, 'audio.mp3');     // ffmpeg autodetects format
     const outputPath = join(workDir, 'output.mp4');
 
     await Promise.all([
@@ -154,10 +137,6 @@ app.post('/render', authenticate, async (req, res) => {
 
     const drawtextFilters = buildDrawtextFilters(on_screen_text, audioDuration);
 
-    // Filter graph:
-    // - loop silent video to fill audio duration
-    // - scale + crop to 1080x1920 vertical
-    // - apply drawtext caption overlays
     const videoFilters = [
       `scale=1080:1920:force_original_aspect_ratio=increase`,
       `crop=1080:1920`,
@@ -204,7 +183,6 @@ app.post('/render', authenticate, async (req, res) => {
     const { videoUrl, storagePath } = await uploadFinalVideo(script_id, outputPath);
     console.log(`[${jobId}] uploaded: ${storagePath}`);
 
-    // Cleanup
     try {
       await fs.unlink(silentVideoPath);
       await fs.unlink(audioPath);
@@ -223,5 +201,5 @@ app.post('/render', authenticate, async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`AiQ render server (Plan A) listening on :${PORT}`);
+  console.log(`AiQ render server (Plan A v2) listening on :${PORT}`);
 });

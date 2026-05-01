@@ -1,0 +1,19 @@
+# Render.com deploy config
+# Push this to a GitHub repo, point Render at it, done.
+
+services:
+  - type: web
+    name: aiq-render-server
+    env: docker
+    plan: starter   # $7/mo — needed for FFmpeg + memory headroom
+    branch: main
+    rootDir: render-server
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: SUPABASE_URL
+        sync: false       # set in Render dashboard
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: RENDER_SERVER_TOKEN
+        sync: false       # generate a random string
